@@ -36,7 +36,16 @@ var (
 	// ErrNotFound is returned by [Get] when no item matches the
 	// (service, account) attributes.
 	ErrNotFound = errors.New("secretservice: item not found")
+	// ErrAmbiguous is returned by [GetByAttributes] when more than one item
+	// matches: a secret is never picked among several.
+	ErrAmbiguous = errors.New("secretservice: several items match")
+	// ErrNoAttributes is returned by [GetByAttributes] for an empty attribute
+	// set (which would match every item) or one longer than [MaxAttributes].
+	ErrNoAttributes = errors.New("secretservice: want between 1 and 32 attributes")
 )
+
+// MaxAttributes bounds the attribute set of [GetByAttributes].
+const MaxAttributes = 32
 
 // backend is the seam between the OS-independent logic below and the D-Bus
 // implementation. On Linux it is a live connection to the daemon
@@ -46,6 +55,7 @@ var (
 type backend interface {
 	set(service, account string, secret []byte) error
 	get(service, account string) ([]byte, error)
+	getAttrs(attrs map[string]string) ([]byte, error)
 	delete(service, account string) error
 	close() error
 }
@@ -76,6 +86,26 @@ func Get(service, account string) ([]byte, error) {
 	}
 	defer b.close()
 	return b.get(service, account)
+}
+
+// GetByAttributes returns the secret of the one item whose attributes include
+// all of attrs, whatever else it carries. It is how an item created by another
+// program is read, for example a KeePassXC entry exposed through its Secret
+// Service integration (attributes such as Title, UserName, URL) or one stored
+// with `secret-tool store`. It returns [ErrNotFound] for no match,
+// [ErrAmbiguous] for several, [ErrNoAttributes] for an empty or oversized set
+// and [ErrUnavailable] when no Secret Service is reachable. A locked
+// collection is unlocked through the daemon's own prompt.
+func GetByAttributes(attrs map[string]string) ([]byte, error) {
+	if len(attrs) == 0 || len(attrs) > MaxAttributes {
+		return nil, ErrNoAttributes
+	}
+	b, err := openBackend()
+	if err != nil {
+		return nil, err
+	}
+	defer b.close()
+	return b.getAttrs(attrs)
 }
 
 // Delete removes the item identified by {service, account}. Deleting an absent
