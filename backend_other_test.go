@@ -20,6 +20,9 @@ func TestOtherStubUnavailable(t *testing.T) {
 	if _, err := Get("s", "a"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Get = %v, want ErrUnavailable", err)
 	}
+	if _, err := GetByAttributes(map[string]string{"a": "b"}); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("GetByAttributes = %v, want ErrUnavailable", err)
+	}
 	if err := Delete("s", "a"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Delete = %v, want ErrUnavailable", err)
 	}

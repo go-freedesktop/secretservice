@@ -38,6 +38,19 @@ func (f *fakeBackend) get(service, account string) ([]byte, error) {
 	return v, nil
 }
 
+func (f *fakeBackend) getAttrs(attrs map[string]string) ([]byte, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	if len(attrs) == 1 && attrs["Title"] == "two" {
+		return nil, ErrAmbiguous
+	}
+	if attrs["Title"] == "Yubikey PIN" {
+		return []byte("246810"), nil
+	}
+	return nil, ErrNotFound
+}
+
 func (f *fakeBackend) delete(service, account string) error {
 	if f.delErr != nil {
 		return f.delErr
@@ -143,6 +156,46 @@ func TestAvailableTrueClosesBackend(t *testing.T) {
 	}
 	if !fb.closed {
 		t.Fatal("Available() must close the probe backend")
+	}
+}
+
+func TestGetByAttributes(t *testing.T) {
+	fb := newFake()
+	withBackend(t, fb, nil)
+	if got, err := GetByAttributes(map[string]string{"Title": "Yubikey PIN", "UserName": "me"}); err != nil || string(got) != "246810" {
+		t.Fatalf("GetByAttributes = %q, %v", got, err)
+	}
+	if !fb.closed {
+		t.Error("the backend must be closed")
+	}
+	if _, err := GetByAttributes(map[string]string{"Title": "none"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("no match: %v", err)
+	}
+	if _, err := GetByAttributes(map[string]string{"Title": "two"}); !errors.Is(err, ErrAmbiguous) {
+		t.Errorf("several: %v", err)
+	}
+	fb.getErr = errors.New("boom")
+	if _, err := GetByAttributes(map[string]string{"a": "b"}); err == nil {
+		t.Error("backend error")
+	}
+	// An empty set would match every item: refused before the bus is opened.
+	called := false
+	orig := openBackend
+	t.Cleanup(func() { openBackend = orig })
+	openBackend = func() (backend, error) { called = true; return fb, nil }
+	if _, err := GetByAttributes(nil); !errors.Is(err, ErrNoAttributes) || called {
+		t.Errorf("nil: %v called=%v", err, called)
+	}
+	big := map[string]string{}
+	for i := 0; i <= MaxAttributes; i++ {
+		big[string(rune('a'+i%26))+string(rune('A'+i/26))] = "x"
+	}
+	if _, err := GetByAttributes(big); !errors.Is(err, ErrNoAttributes) || called {
+		t.Errorf("oversized: %v", err)
+	}
+	withBackend(t, nil, ErrUnavailable)
+	if _, err := GetByAttributes(map[string]string{"a": "b"}); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("unavailable: %v", err)
 	}
 }
 

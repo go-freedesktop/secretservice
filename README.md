@@ -29,6 +29,11 @@ err := secretservice.Set("my-app", "alice@example.com", []byte(secret))
 // Read (secretservice.ErrNotFound when absent).
 secret, err := secretservice.Get("my-app", "alice@example.com")
 
+// Read an item created by another program (KeePassXC, secret-tool...) by any
+// of its attributes: the one item carrying all of them, ErrNotFound for none,
+// ErrAmbiguous for several.
+secret, err = secretservice.GetByAttributes(map[string]string{"Title": "Yubikey PIN"})
+
 // Remove (deleting an absent item is not an error).
 err = secretservice.Delete("my-app", "alice@example.com")
 
@@ -45,6 +50,8 @@ Errors are typed and comparable with `errors.Is`:
 | Error | Meaning |
 | --- | --- |
 | `ErrNotFound` | `Get` found no item for the `{service, account}` attributes |
+| `ErrAmbiguous` | `GetByAttributes` matched several items; none is picked |
+| `ErrNoAttributes` | `GetByAttributes` was given no attribute (it would match everything) or more than 32 |
 | `ErrUnavailable` | no session bus, no daemon owning `org.freedesktop.secrets`, or a non-Linux platform |
 
 ## No silent plaintext fallback

@@ -65,6 +65,24 @@ func TestLiveSecretService(t *testing.T) {
 		t.Fatalf("Get after overwrite = %q, want %q", got, want2)
 	}
 
+	// Lookup by arbitrary attributes: the item carries service and account;
+	// asking for the account alone finds it, a subset need not be the whole key.
+	if got, err = GetByAttributes(map[string]string{"account": account}); err != nil || !bytes.Equal(got, want2) {
+		t.Fatalf("GetByAttributes = %q, %v", got, err)
+	}
+	if _, err := GetByAttributes(map[string]string{"account": account + "-absent"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetByAttributes(absent) = %v, want ErrNotFound", err)
+	}
+	// Two items sharing one attribute are ambiguous, never picked between.
+	other := account + "-twin"
+	t.Cleanup(func() { _ = Delete(service, other) })
+	if err := Set(service, other, []byte("x")); err != nil {
+		t.Fatalf("Set twin: %v", err)
+	}
+	if _, err := GetByAttributes(map[string]string{"service": service}); !errors.Is(err, ErrAmbiguous) {
+		t.Fatalf("GetByAttributes(two items) = %v, want ErrAmbiguous", err)
+	}
+
 	// Delete, then confirm it is gone and that deleting again is not an error.
 	if err := Delete(service, account); err != nil {
 		t.Fatalf("Delete: %v", err)

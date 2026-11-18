@@ -161,9 +161,13 @@ func (b *dbusBackend) set(service, account string, value []byte) error {
 // search returns every item path (unlocked then locked) matching the
 // attributes, unlocking any locked matches so their secrets can be read.
 func (b *dbusBackend) search(service, account string) ([]dbus.ObjectPath, error) {
+	return b.searchAttrs(attributes(service, account))
+}
+
+func (b *dbusBackend) searchAttrs(attrs map[string]string) ([]dbus.ObjectPath, error) {
 	svc := b.conn.Object(ssBus, svcPath)
 	var unlocked, locked []dbus.ObjectPath
-	if err := svc.Call(ifaceService+".SearchItems", 0, attributes(service, account)).Store(&unlocked, &locked); err != nil {
+	if err := svc.Call(ifaceService+".SearchItems", 0, attrs).Store(&unlocked, &locked); err != nil {
 		return nil, fmt.Errorf("SearchItems: %w", err)
 	}
 	if len(locked) > 0 {
@@ -182,8 +186,26 @@ func (b *dbusBackend) get(service, account string) ([]byte, error) {
 	if len(items) == 0 {
 		return nil, ErrNotFound
 	}
+	return b.secretOf(items[0])
+}
+
+func (b *dbusBackend) getAttrs(attrs map[string]string) ([]byte, error) {
+	items, err := b.searchAttrs(attrs)
+	if err != nil {
+		return nil, err
+	}
+	switch len(items) {
+	case 0:
+		return nil, ErrNotFound
+	case 1:
+		return b.secretOf(items[0])
+	}
+	return nil, fmt.Errorf("%w: %d items", ErrAmbiguous, len(items))
+}
+
+func (b *dbusBackend) secretOf(item dbus.ObjectPath) ([]byte, error) {
 	var sec secret
-	if err := b.conn.Object(ssBus, items[0]).Call(ifaceItem+".GetSecret", 0, b.session).Store(&sec); err != nil {
+	if err := b.conn.Object(ssBus, item).Call(ifaceItem+".GetSecret", 0, b.session).Store(&sec); err != nil {
 		return nil, fmt.Errorf("GetSecret: %w", err)
 	}
 	return sec.Value, nil
