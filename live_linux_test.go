@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/godbus/dbus/v5"
 )
 
 // TestLiveSecretService drives the real godbus backend against a running
@@ -19,6 +21,28 @@ import (
 //
 //	dbus-run-session -- sh -c 'printf "" | gnome-keyring-daemon --unlock \
 //	  --components=secrets >/dev/null 2>&1; SECRETSERVICE_LIVE=1 go test -run Live'
+//
+// deleteByAttrsForTest removes every item carrying attrs (test cleanup).
+func deleteByAttrsForTest(attrs map[string]string) error {
+	b, err := dialDBus()
+	if err != nil {
+		return err
+	}
+	defer b.close()
+	d := b.(*dbusBackend)
+	items, err := d.searchAttrs(attrs)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		var prompt dbus.ObjectPath
+		if err := d.conn.Object(ssBus, it).Call(ifaceItem+".Delete", 0).Store(&prompt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func TestLiveSecretService(t *testing.T) {
 	if os.Getenv("SECRETSERVICE_LIVE") != "1" {
 		t.Skip("set SECRETSERVICE_LIVE=1 to run the live Secret Service round-trip")
@@ -72,6 +96,18 @@ func TestLiveSecretService(t *testing.T) {
 	}
 	if _, err := GetByAttributes(map[string]string{"account": account + "-absent"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetByAttributes(absent) = %v, want ErrNotFound", err)
+	}
+	// An item with arbitrary attributes: created, read back, replaced in place.
+	attrs := map[string]string{"Title": "live " + account, "UserName": "me"}
+	t.Cleanup(func() { _ = deleteByAttrsForTest(attrs) })
+	if err := SetByAttributes("live", attrs, []byte("first")); err != nil {
+		t.Fatalf("SetByAttributes: %v", err)
+	}
+	if err := SetByAttributes("live", attrs, []byte("second")); err != nil {
+		t.Fatalf("SetByAttributes (replace): %v", err)
+	}
+	if got, err := GetByAttributes(map[string]string{"Title": attrs["Title"]}); err != nil || string(got) != "second" {
+		t.Fatalf("after replace: %q %v (one item, the second value)", got, err)
 	}
 	// Two items sharing one attribute are ambiguous, never picked between.
 	other := account + "-twin"

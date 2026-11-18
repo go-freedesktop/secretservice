@@ -138,13 +138,17 @@ func (b *dbusBackend) prompt(path dbus.ObjectPath) error {
 }
 
 func (b *dbusBackend) set(service, account string, value []byte) error {
+	return b.setAttrs(service+"/"+account, attributes(service, account), value)
+}
+
+func (b *dbusBackend) setAttrs(label string, attrs map[string]string, value []byte) error {
 	collPath, err := b.collection()
 	if err != nil {
 		return err
 	}
 	props := map[string]dbus.Variant{
-		propItemLabel: dbus.MakeVariant(service + "/" + account),
-		propItemAttrs: dbus.MakeVariant(attributes(service, account)),
+		propItemLabel: dbus.MakeVariant(label),
+		propItemAttrs: dbus.MakeVariant(attrs),
 	}
 	sec := secret{Session: b.session, Parameters: []byte{}, Value: value, ContentType: "application/octet-stream"}
 	coll := b.conn.Object(ssBus, collPath)

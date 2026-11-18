@@ -34,6 +34,9 @@ secret, err := secretservice.Get("my-app", "alice@example.com")
 // ErrAmbiguous for several.
 secret, err = secretservice.GetByAttributes(map[string]string{"Title": "Yubikey PIN"})
 
+// Create (or replace in place) an item with arbitrary attributes.
+err = secretservice.SetByAttributes("Yubikey PIN", map[string]string{"Title": "Yubikey PIN"}, []byte(pin))
+
 // Remove (deleting an absent item is not an error).
 err = secretservice.Delete("my-app", "alice@example.com")
 
