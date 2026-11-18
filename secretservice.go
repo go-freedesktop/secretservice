@@ -56,6 +56,7 @@ type backend interface {
 	set(service, account string, secret []byte) error
 	get(service, account string) ([]byte, error)
 	getAttrs(attrs map[string]string) ([]byte, error)
+	setAttrs(label string, attrs map[string]string, secret []byte) error
 	delete(service, account string) error
 	close() error
 }
@@ -106,6 +107,23 @@ func GetByAttributes(attrs map[string]string) ([]byte, error) {
 	}
 	defer b.close()
 	return b.getAttrs(attrs)
+}
+
+// SetByAttributes stores secret in an item carrying exactly attrs, with the
+// given label, replacing an existing item that has the same attributes (the
+// Secret Service's replace flag). Use it to create what [GetByAttributes] reads
+// back. It returns [ErrNoAttributes] for an empty or oversized set and
+// [ErrUnavailable] when no Secret Service is reachable.
+func SetByAttributes(label string, attrs map[string]string, secret []byte) error {
+	if len(attrs) == 0 || len(attrs) > MaxAttributes {
+		return ErrNoAttributes
+	}
+	b, err := openBackend()
+	if err != nil {
+		return err
+	}
+	defer b.close()
+	return b.setAttrs(label, attrs, secret)
 }
 
 // Delete removes the item identified by {service, account}. Deleting an absent

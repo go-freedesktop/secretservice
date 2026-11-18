@@ -15,6 +15,10 @@ type fakeBackend struct {
 	delErr   error
 	closed   bool
 	closeErr error
+
+	lastLabel  string
+	lastAttrs  map[string]string
+	lastSecret []byte
 }
 
 func key(service, account string) string { return service + "\x00" + account }
@@ -49,6 +53,14 @@ func (f *fakeBackend) getAttrs(attrs map[string]string) ([]byte, error) {
 		return []byte("246810"), nil
 	}
 	return nil, ErrNotFound
+}
+
+func (f *fakeBackend) setAttrs(label string, attrs map[string]string, secret []byte) error {
+	if f.setErr != nil {
+		return f.setErr
+	}
+	f.lastLabel, f.lastAttrs, f.lastSecret = label, attrs, append([]byte(nil), secret...)
+	return nil
 }
 
 func (f *fakeBackend) delete(service, account string) error {
@@ -195,6 +207,35 @@ func TestGetByAttributes(t *testing.T) {
 	}
 	withBackend(t, nil, ErrUnavailable)
 	if _, err := GetByAttributes(map[string]string{"a": "b"}); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("unavailable: %v", err)
+	}
+}
+
+func TestSetByAttributes(t *testing.T) {
+	fb := newFake()
+	withBackend(t, fb, nil)
+	if err := SetByAttributes("PIN", map[string]string{"Title": "PIN", "UserName": "me"}, []byte("246810")); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastLabel != "PIN" || fb.lastAttrs["UserName"] != "me" || string(fb.lastSecret) != "246810" || !fb.closed {
+		t.Errorf("%+v", fb)
+	}
+	if err := SetByAttributes("x", nil, []byte("s")); !errors.Is(err, ErrNoAttributes) {
+		t.Errorf("empty: %v", err)
+	}
+	big := map[string]string{}
+	for i := 0; i <= MaxAttributes; i++ {
+		big[string(rune('a'+i%26))+string(rune('A'+i/26))] = "x"
+	}
+	if err := SetByAttributes("x", big, []byte("s")); !errors.Is(err, ErrNoAttributes) {
+		t.Errorf("oversized: %v", err)
+	}
+	fb.setErr = errors.New("boom")
+	if err := SetByAttributes("x", map[string]string{"a": "b"}, []byte("s")); err == nil {
+		t.Error("backend error")
+	}
+	withBackend(t, nil, ErrUnavailable)
+	if err := SetByAttributes("x", map[string]string{"a": "b"}, []byte("s")); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("unavailable: %v", err)
 	}
 }
